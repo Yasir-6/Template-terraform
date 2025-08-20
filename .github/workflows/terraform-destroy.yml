@@ -1,0 +1,220 @@
+
+name: Destroy AWS Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy (dev/staging/prod)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      confirmation:
+        description: 'Type "DESTROY" to confirm deletion'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-2
+  TF_STATE_BUCKET: "terraformfilesremotestate"
+  TF_STATE_LOCK_TABLE: "terraform-state-lock"
+
+jobs:
+  verify-confirmation:
+    name: Verify Destroy Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Confirmation
+        if: github.event.inputs.confirmation != 'DESTROY'
+        run: |
+          echo "Destruction not confirmed. Please type 'DESTROY' to confirm."
+          exit 1
+
+  terraform-destroy-microservices:
+    name: Destroy Microservices
+    needs: verify-confirmation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/environments/${{ github.event.inputs.environment }}/microservices
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend=true \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${{ github.event.inputs.environment }}/microservices/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+
+  terraform-destroy-ecs:
+    name: Destroy ECS
+    needs: terraform-destroy-microservices
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/environments/${{ github.event.inputs.environment }}/ecs
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend=true \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${{ github.event.inputs.environment }}/ecs/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+
+  terraform-destroy-alb:
+    name: Destroy ALB
+    needs: terraform-destroy-ecs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/environments/${{ github.event.inputs.environment }}/alb
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend=true \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${{ github.event.inputs.environment }}/alb/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+
+  terraform-destroy-vpc:
+    name: Destroy VPC
+    needs: terraform-destroy-alb
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/environments/${{ github.event.inputs.environment }}/vpc
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend=true \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${{ github.event.inputs.environment }}/vpc/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+
+  terraform-destroy-backend:
+    name: Destroy Backend Infrastructure
+    needs: terraform-destroy-vpc
+    if: github.event.inputs.confirmation == 'DESTROY'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/environments/backend
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Remove prevent_destroy Lifecycle
+        run: |
+          sed -i 's/prevent_destroy = true/prevent_destroy = false/' main.tf
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend=true \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=backend/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
