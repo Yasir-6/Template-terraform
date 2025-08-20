@@ -36,5 +36,6 @@ variable "microservices" {
     host   = string
     cpu    = number
     memory = number
+    env_variables = optional(map(string), {})
   }))
 }

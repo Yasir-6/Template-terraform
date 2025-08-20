@@ -67,6 +67,11 @@ module "microservices" {
       host  = "chat.drazex.com"
       cpu   = 256
       memory = 512
+      env_variables = {
+        ENV = "dev"
+        SERVICE_NAME = "chat"
+        PORT = "3001"
+      }
     }
     payment = {
       image = var.payment_image
@@ -74,6 +79,11 @@ module "microservices" {
       host  = "payment.drazex.com"
       cpu   = 256
       memory = 512
+      env_variables = {
+        ENV = "dev"
+        SERVICE_NAME = "payment"
+        PORT = "3002"
+      }
     }
     admin = {
       image = var.admin_image
@@ -81,6 +91,11 @@ module "microservices" {
       host  = "admin.drazex.com"
       cpu   = 256
       memory = 512
+      env_variables = {
+        ENV = "dev"
+        SERVICE_NAME = "admin"
+        PORT = "3003"
+      }
     }
   }
 }

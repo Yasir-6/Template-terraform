@@ -125,6 +125,13 @@ resource "aws_ecs_task_definition" "microservice_tasks" {
         }
       ]
       
+      environment = [
+        for key, value in each.value.env_variables : {
+          name  = key
+          value = value
+        }
+      ]
+      
       logConfiguration = {
         logDriver = "awslogs"
         options = {
